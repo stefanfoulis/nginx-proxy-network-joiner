@@ -75,13 +75,20 @@ def sync_networks(proxy_name, proxy_network_name):
         network.connect(proxy_name)
         click.echo(f'done', color='green')
 
-    # nginx-proxy is a bit eager about marking a container as unreachable if
-    # the the the proxy container is not in the network yet when nginx-proxy
-    # initially detects the new container starting up. We might not be fast
-    # enough to add the proxy container to the new network.
-    # So we tell nginx-proxy to re-generate the config files.
-    proxy = client.containers.get(proxy_name)
-    proxy.kill(signal='HUP')
+    if to_join:
+        # nginx-proxy is a bit eager about marking a container as unreachable if
+        # the the the proxy container is not in the network yet when nginx-proxy
+        # initially detects the new container starting up. We will not always be
+        # fast enough to add the proxy container to the new network.
+        # Unfortunatly nginx-proxy won't detect that the container would now be
+        # reachable until the next time the nginx config is re-generated.
+        # So here we want to tell nginx-proxy to re-generate the config files.
+        # We're taking the easiest way to trigger it: create a new container.
+        click.echo(f'telling {proxy_name} to regenerate config... ', nl=False)
+        client.containers.run('busybox:latest', auto_remove=True)
+        click.echo(f'done', color='green')
+
+
     # TODO: rejoin already_joined if aliases have changed
 
 
