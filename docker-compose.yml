@@ -1,0 +1,22 @@
+version: '2'
+services:
+  proxy:
+    image: jwilder/nginx-proxy:alpine
+    container_name: proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - ./local-nginx-proxy.conf:/etc/nginx/conf.d/my_proxy.conf:ro
+      - ./vhost.d:/etc/nginx/vhost.d:ro
+      - ./certs/:/etc/nginx/certs:ro
+
+  proxy-network-joiner:
+    build:
+      context: ./network-joiner
+    container_name: proxy-network-joiner
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./network-joiner/dpnj.py:/app/dpnj.py
+    command: python dpnj.py start

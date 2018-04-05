@@ -1,0 +1,3 @@
+# These rules are here to avoid accidental commiting of certs to git
+*.crt
+*.key
