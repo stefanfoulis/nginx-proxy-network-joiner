@@ -26,9 +26,11 @@ def should_join_networks(proxy_name):
             if not virtual_hosts:
                 continue
             networks = container.attrs['NetworkSettings']['Networks'].keys()
-            for network in networks:
+            for network_name in networks:
+                if network_name == 'bridge':
+                    continue
                 for virtual_host in virtual_hosts:
-                    vhosts[network].add(virtual_host)
+                    vhosts[network_name].add(virtual_host)
     return vhosts
 
 
@@ -38,6 +40,8 @@ def currently_joined_networks(proxy_name, proxy_network_name):
     for network_name, network in proxy.attrs['NetworkSettings']['Networks'].items():
         if network_name == proxy_network_name:
             # Ignore the proxies own network.
+            continue
+        if network_name == 'bridge':
             continue
         networks[network_name] = set(network['Aliases'])
     return networks
@@ -113,7 +117,14 @@ def sync_networks(proxy_name, proxy_network_name):
         click.echo(f'done', color='green')
 
 
-    # TODO: rejoin already_joined if aliases have changed
+def watch_for_events(proxy_name, proxy_network_name):
+    click.echo('Watching for docker events...')
+    for event in client.events(decode=True):
+        if event['Type'] == 'container' and event['Action'] in ('start', 'stop', 'kill'):
+            sync_networks(
+                proxy_name=proxy_name,
+                proxy_network_name=proxy_network_name,
+            )
 
 
 @click.group()
@@ -132,9 +143,22 @@ def cli():
     default='proxy_default',
     help='The docker container name of the proxy.',
 )
-def sync(proxy_name, proxy_network_name):
+@click.option(
+    '--watch/--no-watch',
+    default=False,
+    help='Watch the docker events and update when changes occur.',
+)
+def sync(proxy_name, proxy_network_name, watch):
     click.echo(f'syncing... for {proxy_name} running in {proxy_network_name}')
-    sync_networks(proxy_name=proxy_name, proxy_network_name=proxy_network_name)
+    sync_networks(
+        proxy_name=proxy_name,
+        proxy_network_name=proxy_network_name,
+    )
+    if watch:
+        watch_for_events(
+            proxy_name=proxy_name,
+            proxy_network_name=proxy_network_name,
+        )
 
 
 if __name__ == "__main__":
