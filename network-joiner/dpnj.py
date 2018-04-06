@@ -127,6 +127,21 @@ def watch_for_events(proxy_name, proxy_network_name):
             )
 
 
+def debug_config(proxy_name, proxy_network_name):
+    joined = currently_joined_networks(proxy_name, proxy_network_name)
+    click.echo(f'Proxy: {proxy_name} on {proxy_network_name}')
+    for network_name, aliases in joined.items():
+        click.echo(f'  {network_name}: ')
+        click.echo(f'      ' + ', '.join(sorted(aliases)))
+
+
+def debug_config_loop(proxy_name, proxy_network_name):
+    import time
+    while True:
+        debug_config(proxy_name, proxy_network_name)
+        time.sleep(3)
+
+
 @click.group()
 def cli():
     click.echo('this is proxy network discoverer')
@@ -156,6 +171,35 @@ def sync(proxy_name, proxy_network_name, watch):
     )
     if watch:
         watch_for_events(
+            proxy_name=proxy_name,
+            proxy_network_name=proxy_network_name,
+        )
+
+
+@cli.command()
+@click.option(
+    '--proxy-name',
+    default='proxy',
+    help='The docker container name of the proxy.',
+)
+@click.option(
+    '--proxy-network-name',
+    default='proxy_default',
+    help='The docker container name of the proxy.',
+)
+@click.option(
+    '--loop/--no-loop',
+    default=False,
+)
+def debug(proxy_name, proxy_network_name, loop):
+    click.echo(f'debugging... for {proxy_name} running in {proxy_network_name}')
+    if loop:
+        debug_config_loop(
+            proxy_name=proxy_name,
+            proxy_network_name=proxy_network_name,
+        )
+    else:
+        debug_config(
             proxy_name=proxy_name,
             proxy_network_name=proxy_network_name,
         )
