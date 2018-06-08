@@ -1,4 +1,4 @@
-version: '2'
+version: '3'
 services:
   proxy:
     image: jwilder/nginx-proxy:alpine
@@ -11,7 +11,7 @@ services:
       - ./local-nginx-proxy.conf:/etc/nginx/conf.d/my_proxy.conf:ro
       - ./vhost.d:/etc/nginx/vhost.d:ro
       - ./certs/:/etc/nginx/certs:ro
-
+    restart: always
   proxy-network-joiner:
     build:
       context: ./network-joiner
@@ -19,4 +19,5 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./network-joiner/dpnj.py:/app/dpnj.py
-    command: python dpnj.py start
+    command: python dpnj.py sync --watch
+    restart: always
