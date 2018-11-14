@@ -1,4 +1,4 @@
-from collections import defaultdict
+import typing
 
 import click
 import docker
@@ -7,70 +7,51 @@ import docker
 client = docker.from_env()
 
 
-def should_join_networks(proxy_name):
-    vhosts = defaultdict(set)
+def get_networks_to_join(proxy_name: typing.AnyStr) -> typing.Set:
+    networks = set()
     for container in client.containers.list():
         if container.name == proxy_name:
-            # Ignore the proxy container, since it does not make sense that
-            # it would have VIRTUAL_HOSTS.
+            # Ignore the proxy container
             continue
-        for env_var in container.attrs['Config']['Env']:
-            if not env_var.startswith('VIRTUAL_HOST='):
-                continue
-            virtual_hosts = [
-                virtual_host.strip()
-                for virtual_host
-                in env_var.split('VIRTUAL_HOST=', maxsplit=1)[1].split(',')
-                if virtual_host.strip()
-            ]
-            if not virtual_hosts:
-                continue
-            networks = container.attrs['NetworkSettings']['Networks'].keys()
-            for network_name in networks:
-                if network_name == 'bridge':
-                    continue
-                for virtual_host in virtual_hosts:
-                    vhosts[network_name].add(virtual_host)
-    return vhosts
+        if container.attrs['Config']['Labels'].get('traefik.enable') == 'true':
+            container_networks = container.attrs['NetworkSettings']['Networks'].keys()
+            for network_name in container_networks:
+                if network_name != 'bridge':
+                    networks.add(network_name)
+    return networks
 
 
-def currently_joined_networks(proxy_name, proxy_network_name):
+def get_currently_joined_networks(proxy_name: typing.Any, proxy_network_name: typing.AnyStr) -> typing.Set:
     proxy = client.containers.get(proxy_name)
-    networks = {}
+    networks = set()
     for network_name, network in proxy.attrs['NetworkSettings']['Networks'].items():
         if network_name == proxy_network_name:
             # Ignore the proxies own network.
             continue
         if network_name == 'bridge':
             continue
-        networks[network_name] = set(network['Aliases'])
+        networks.add(network_name)
     return networks
 
 
 def sync_networks(proxy_name, proxy_network_name):
-    should_join_dict = should_join_networks(
+    networks_to_join = get_networks_to_join(
         proxy_name=proxy_name,
     )
-    currently_joined_dict = currently_joined_networks(
+    currently_joined_networks = get_currently_joined_networks(
         proxy_name=proxy_name,
         proxy_network_name=proxy_network_name,
     )
-    should_be_member_of = set(should_join_dict.keys())
-    is_member_of = set(currently_joined_dict.keys())
+    currently_joined_networks = currently_joined_networks
 
-    to_leave = is_member_of - should_be_member_of
-    to_join = should_be_member_of - is_member_of
-    already_joined = is_member_of & should_be_member_of
+    to_leave = currently_joined_networks - networks_to_join
+    to_join = networks_to_join - currently_joined_networks
+    already_joined = currently_joined_networks & networks_to_join
     click.echo(
         f'to leave: {to_leave}\n'
         f'to join: {to_join}\n'
         f'already joined: {already_joined}\n'
     )
-    all_aliases = set()
-    for aliases in should_join_dict.values():
-        for alias in aliases:
-            all_aliases.add(alias)
-    click.echo(f'all aliases: {all_aliases}')
 
     for network_name in to_leave:
         network = client.networks.get(network_name)
@@ -81,18 +62,14 @@ def sync_networks(proxy_name, proxy_network_name):
     for network_name in to_join:
         network = client.networks.get(network_name)
         click.echo(f'connecting to {network_name}... ', nl=False)
-        network.connect(proxy_name, aliases=list(all_aliases))
+        network.connect(proxy_name)
         click.echo(f'done', color='green')
 
     for network_name in already_joined:
-        current_aliases = currently_joined_dict[network_name]
-        if all_aliases.issubset(current_aliases):
-            continue
         network = client.networks.get(network_name)
         click.echo(f're-connecting to {network_name} to update aliases... disconnecting... ', nl=False)
         network.disconnect(proxy_name, force=True)
         click.echo(f'connecting... ', nl=False)
-        network.connect(proxy_name, aliases=list(all_aliases))
         click.echo(f'done', color='green')
         # We don't try to remove no longer needed aliases here because that
         # would be much more complicated and leaving outdated aliases does no
@@ -128,11 +105,10 @@ def watch_for_events(proxy_name, proxy_network_name):
 
 
 def debug_config(proxy_name, proxy_network_name):
-    joined = currently_joined_networks(proxy_name, proxy_network_name)
+    joined = get_currently_joined_networks(proxy_name, proxy_network_name)
     click.echo(f'Proxy: {proxy_name} on {proxy_network_name}')
-    for network_name, aliases in joined.items():
+    for network_name in joined:
         click.echo(f'  {network_name}: ')
-        click.echo(f'      ' + ', '.join(sorted(aliases)))
 
 
 def debug_config_loop(proxy_name, proxy_network_name):

@@ -1,7 +1,8 @@
-FROM python:3.6-alpine
+FROM python:3.7-alpine
 RUN mkdir -p /app
 WORKDIR /app
 COPY requirements.txt /app/
-RUN pip install -r requirements.txt
+RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY . /app/
-CMD python lbreg.py
+ENTRYPOINT ["python", "dpnj.py"]
+CMD ["sync", "--watch", "--proxy-name", "proxy", "--proxy-network-name", "proxy_overlay"]

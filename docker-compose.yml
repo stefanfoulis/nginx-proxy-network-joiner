@@ -1,22 +1,35 @@
-version: '2'
+version: '3.5'
 services:
   proxy:
-    image: jwilder/nginx-proxy:alpine
+    image: traefik
     container_name: proxy
+    networks:
+      - overlay
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - /var/run/docker.sock:/tmp/docker.sock:ro
-      - ./local-nginx-proxy.conf:/etc/nginx/conf.d/my_proxy.conf:ro
-      - ./vhost.d:/etc/nginx/vhost.d:ro
-      - ./certs/:/etc/nginx/certs:ro
+      - "./traefik.toml:/etc/traefik/traefik.toml"
+      - "./certs:/etc/ssl/certs/:ro"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    labels:
+     - traefik.enable=true
+     - traefik.frontend.rule=Host:traefik.example.org
+     - traefik.backend=traefik
+     - traefik.port=8080
+    restart: on-failure
 
-  proxy-network-joiner:
+  joiner:
     build:
       context: ./network-joiner
-    container_name: proxy-network-joiner
+    networks:
+      - overlay
+    container_name: joiner
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./network-joiner/dpnj.py:/app/dpnj.py
-    command: python dpnj.py start
+    restart: on-failure
+
+networks:
+  overlay:
+    name: proxy_overlay
