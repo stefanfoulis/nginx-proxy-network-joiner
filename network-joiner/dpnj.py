@@ -84,10 +84,12 @@ def sync_networks(proxy_name, proxy_network_name):
         network.connect(proxy_name, aliases=list(all_aliases))
         click.echo(f'done', color='green')
 
+    did_rejoin = False
     for network_name in already_joined:
         current_aliases = currently_joined_dict[network_name]
         if all_aliases.issubset(current_aliases):
             continue
+        did_rejoin = True
         network = client.networks.get(network_name)
         click.echo(f're-connecting to {network_name} to update aliases... disconnecting... ', nl=False)
         network.disconnect(proxy_name, force=True)
@@ -98,7 +100,7 @@ def sync_networks(proxy_name, proxy_network_name):
         # would be much more complicated and leaving outdated aliases does no
         # harm (I hope).
 
-    if to_join:
+    if to_join or did_rejoin:
         # nginx-proxy is a bit eager about marking a container as unreachable if
         # the the the proxy container is not in the network yet when nginx-proxy
         # initially detects the new container starting up. We will not always be
@@ -120,7 +122,12 @@ def sync_networks(proxy_name, proxy_network_name):
 def watch_for_events(proxy_name, proxy_network_name):
     click.echo('Watching for docker events...')
     for event in client.events(decode=True):
-        if event['Type'] == 'container' and event['Action'] in ('start', 'stop', 'kill'):
+        should_sync = (
+            event['Type'] == 'container'
+            and event['Action'] in ('start', 'stop', 'kill')
+            and event['Actor']['Attributes']['name'] != 'proxy-regenerate-trigger'
+        )
+        if should_sync:
             sync_networks(
                 proxy_name=proxy_name,
                 proxy_network_name=proxy_network_name,
